@@ -49,7 +49,7 @@
 以下の形式でコマンドを実行します。
 
 ```bash
-./slack-log-fetcher -token="YOUR_SLACK_TOKEN" -channels="C0123ABC,C4567DEF" -startDate="YYYY-MM-DD" -endDate="YYYY-MM-DD" -outputDir="./output"
+./slack-to-json-exporter -token="YOUR_SLACK_TOKEN" -channels="C0123ABC,C4567DEF" -startDate="YYYY-MM-DD" -endDate="YYYY-MM-DD" -outputDir="./output"
 ```
 
 ### 引数の説明
@@ -67,7 +67,7 @@
 チャンネル `C0123ABC` と `C4567DEF` の、2025年7月1日から2025年7月31日までのログを `./my_slack_logs` フォルダに保存する場合：
 
 ```bash
-./slack-log-fetcher \
+./slack-to-json-exporter \
   -token="xoxb-xxxxxxxxxxxxxxxxxxxxxxxx" \
   -channels="C0123ABC,C4567DEF" \
   -startDate="2025-07-01" \
