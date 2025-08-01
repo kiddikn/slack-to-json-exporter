@@ -132,9 +132,8 @@ func getConversationHistoryWithRetry(api *slack.Client, params *slack.GetConvers
 		response, err := api.GetConversationHistory(params)
 		if err != nil {
 			if rateLimitErr, ok := err.(*slack.RateLimitedError); ok {
-				retryAfter := time.Duration(rateLimitErr.RetryAfter) * time.Second
-				fmt.Printf("  Rate limited, waiting %v (attempt %d/%d)...\n", retryAfter, attempt+1, maxRetries)
-				time.Sleep(retryAfter)
+				fmt.Printf("  Rate limited, waiting %v (attempt %d/%d)...\n", rateLimitErr.RetryAfter, attempt+1, maxRetries)
+				time.Sleep(rateLimitErr.RetryAfter)
 				continue
 			}
 
