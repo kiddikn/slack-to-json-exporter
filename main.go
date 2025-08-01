@@ -5,12 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/slack-go/slack"
+	"go.uber.org/ratelimit"
 )
 
 func main() {
@@ -44,6 +46,7 @@ func main() {
 	}
 
 	api := slack.New(*token)
+	rl := ratelimit.New(1)
 
 	channelList := strings.Split(*channels, ",")
 	for _, channelID := range channelList {
@@ -54,7 +57,7 @@ func main() {
 
 		fmt.Printf("Fetching logs for channel %s...\n", channelID)
 
-		messages, err := fetchAllMessages(api, channelID, startTimestamp, endTimestamp)
+		messages, err := fetchAllMessages(api, rl, channelID, startTimestamp, endTimestamp)
 		if err != nil {
 			log.Printf("Error fetching messages for channel %s: %v", channelID, err)
 			continue
@@ -85,9 +88,10 @@ func parseDate(dateStr string, isStartOfDay bool) (string, error) {
 	return fmt.Sprintf("%d", t.Unix()), nil
 }
 
-func fetchAllMessages(api *slack.Client, channelID, startTime, endTime string) ([]slack.Message, error) {
+func fetchAllMessages(api *slack.Client, rl ratelimit.Limiter, channelID, startTime, endTime string) ([]slack.Message, error) {
 	var allMessages []slack.Message
 	cursor := ""
+	requestCount := 0
 
 	for {
 		params := &slack.GetConversationHistoryParameters{
@@ -97,7 +101,13 @@ func fetchAllMessages(api *slack.Client, channelID, startTime, endTime string) (
 			Cursor:    cursor,
 		}
 
-		response, err := api.GetConversationHistory(params)
+		rl.Take()
+		requestCount++
+		if requestCount > 1 {
+			fmt.Printf("  Making request %d for channel %s...\n", requestCount, channelID)
+		}
+
+		response, err := getConversationHistoryWithRetry(api, params)
 		if err != nil {
 			return nil, err
 		}
@@ -112,6 +122,39 @@ func fetchAllMessages(api *slack.Client, channelID, startTime, endTime string) (
 	}
 
 	return allMessages, nil
+}
+
+func getConversationHistoryWithRetry(api *slack.Client, params *slack.GetConversationHistoryParameters) (*slack.GetConversationHistoryResponse, error) {
+	maxRetries := 5
+	baseDelay := time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		response, err := api.GetConversationHistory(params)
+		if err != nil {
+			if rateLimitErr, ok := err.(*slack.RateLimitedError); ok {
+				retryAfter := time.Duration(rateLimitErr.RetryAfter) * time.Second
+				fmt.Printf("  Rate limited, waiting %v (attempt %d/%d)...\n", retryAfter, attempt+1, maxRetries)
+				time.Sleep(retryAfter)
+				continue
+			}
+
+			if slackErr, ok := err.(*slack.SlackErrorResponse); ok && slackErr.Err == "ratelimited" {
+				delay := time.Duration(math.Pow(2, float64(attempt))) * baseDelay
+				if delay > 30*time.Second {
+					delay = 30 * time.Second
+				}
+				fmt.Printf("  Rate limited, waiting %v (attempt %d/%d)...\n", delay, attempt+1, maxRetries)
+				time.Sleep(delay)
+				continue
+			}
+
+			return nil, err
+		}
+
+		return response, nil
+	}
+
+	return nil, fmt.Errorf("max retries exceeded")
 }
 
 func saveMessagesToFile(messages []slack.Message, filename string) error {

@@ -34,4 +34,4 @@ go.work.sum
 
 .claude/**
 slack-to-json-exporter
-./output/
+output/*.json
